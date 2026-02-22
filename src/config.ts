@@ -1,30 +1,25 @@
-/**
- * Plugin configuration types and validation.
- */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_URL = "https://walterops.com";
+
+function loadManifest(): { version: string; configSchema: Record<string, unknown> } {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const manifestPath = join(dir, "..", "openclaw.plugin.json");
+  const raw = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  return { version: raw.version, configSchema: raw.configSchema };
+}
+
+const manifest = loadManifest();
+
+export const PLUGIN_VERSION: string = manifest.version;
+export const CONFIG_SCHEMA: Record<string, unknown> = manifest.configSchema;
 
 export type WalterPluginConfig = {
   url: string;
   token: string;
 };
-
-export const CONFIG_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["token"],
-  properties: {
-    url: {
-      type: "string",
-      description:
-        "Walter instance URL. Defaults to https://walterops.com. Only needed for self-hosted deployments.",
-    },
-    token: {
-      type: "string",
-      description: "Walter API token for authentication",
-    },
-  },
-} as const;
 
 export function validateConfig(raw: unknown): WalterPluginConfig {
   if (!raw || typeof raw !== "object") {

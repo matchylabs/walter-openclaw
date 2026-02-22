@@ -1,3 +1,22 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test and build artifacts
+coverage/
+*.tgz
+*.log

@@ -23,7 +23,8 @@
  */
 
 import { WalterClient } from "./client.js";
-import { CONFIG_SCHEMA, validateConfig } from "./config.js";
+import type { ClientLogger } from "./client.js";
+import { CONFIG_SCHEMA, PLUGIN_VERSION, validateConfig } from "./config.js";
 import { createCancelTool } from "./tools/cancel.js";
 import { createChatTool } from "./tools/chat.js";
 import { createListChatsTool } from "./tools/list-chats.js";
@@ -31,11 +32,7 @@ import { createListTurfsTool } from "./tools/list-turfs.js";
 import { createSearchTurfsTool } from "./tools/search-turfs.js";
 import type { ToolResult } from "./types.js";
 
-type PluginLogger = {
-  info: (...args: unknown[]) => void;
-  warn: (...args: unknown[]) => void;
-  error: (...args: unknown[]) => void;
-};
+type PluginLogger = ClientLogger;
 
 type PluginTool = {
   name: string;
@@ -78,7 +75,7 @@ const plugin = {
       return;
     }
 
-    const client = new WalterClient(config.url, config.token);
+    const client = new WalterClient(config.url, config.token, PLUGIN_VERSION, api.logger);
 
     // Tools are optional because they require a valid API token to function.
     const opts: ToolOptions = { optional: true };

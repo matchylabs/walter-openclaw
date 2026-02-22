@@ -22,23 +22,35 @@ export function toolError(message: string, details: Record<string, unknown> = {}
 }
 
 /**
+ * Internal validation error patterns that leak implementation details.
+ * These come from assertObject/assertString/assertArray/assertNumber
+ * and should not be shown to the agent.
+ */
+const INTERNAL_PATTERNS = [
+  /: expected (object|string|array|number) for '/,
+  /: expected object, got /,
+  /: unknown status '/,
+];
+
+/**
  * Convert an error into a user-friendly message.
- * Walter RPC errors and HTTP errors are already user-facing.
- * Internal validation errors (from assertObject/assertString/etc.) are
- * implementation details — wrap them so the agent sees a clean message.
+ *
+ * Strategy: block known-bad patterns (internal validation messages).
+ * Everything else passes through — network errors, HTTP errors, timeouts,
+ * and Walter RPC errors are all useful diagnostics for the agent.
  */
 export function toUserMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
 
-  // Errors from rpc() / notify() are already user-facing
-  if (
-    error.message.startsWith("Walter ") ||
-    error.message.startsWith("Request was cancelled") ||
-    error.message.startsWith("Aborted")
-  ) {
-    return error.message;
-  }
+  const msg = error.message;
 
   // Internal validation errors leak implementation details — wrap them
-  return "Walter returned an unexpected response. Please try again.";
+  for (const pattern of INTERNAL_PATTERNS) {
+    if (pattern.test(msg)) {
+      return "Walter returned an unexpected response. Please try again.";
+    }
+  }
+
+  // Everything else is user-facing (network, HTTP, RPC, timeouts, cancellation)
+  return msg;
 }

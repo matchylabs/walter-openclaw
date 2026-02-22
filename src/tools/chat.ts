@@ -61,8 +61,11 @@ export function createChatTool(client: WalterClient) {
         // Auto-create chat if none specified
         const chatId = chatIdInput?.trim() || (await client.createChat(signal));
 
-        // Capture the resolved chat_id eagerly so the callback has it immediately
-        let resolvedChatId = chatId;
+        // Track the server-resolved chat_id. Updated by sendMessage inside
+        // chatStreaming, but we only learn the final value after it returns.
+        // During streaming, partials use the input chatId which is correct
+        // for user-initiated chats and best-effort for auto-created ones.
+        let streamingChatId = chatId;
 
         const { response, chat_id: finalChatId } = await client.chatStreaming(
           chatId,
@@ -70,15 +73,15 @@ export function createChatTool(client: WalterClient) {
           (partial) => {
             onUpdate?.({
               content: [{ type: "text", text: partial }],
-              details: { status: "processing", chat_id: resolvedChatId },
+              details: { status: "processing", chat_id: streamingChatId },
             });
           },
           signal,
         );
 
-        resolvedChatId = finalChatId;
+        streamingChatId = finalChatId;
 
-        return toolSuccess(response, { chat_id: resolvedChatId, status: "complete" });
+        return toolSuccess(response, { chat_id: finalChatId, status: "complete" });
       } catch (error) {
         return toolError(toUserMessage(error));
       }

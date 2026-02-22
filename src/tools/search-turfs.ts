@@ -28,7 +28,8 @@ export function createSearchTurfsTool(client: WalterClient) {
         },
         os: {
           type: "string",
-          description: "Operating system: linux, darwin, windows",
+          enum: ["linux", "darwin", "windows"],
+          description: "Operating system",
         },
         status: {
           type: "string",
@@ -37,6 +38,7 @@ export function createSearchTurfsTool(client: WalterClient) {
         },
       },
       required: [] as string[],
+      minProperties: 1,
       additionalProperties: false,
     },
 
