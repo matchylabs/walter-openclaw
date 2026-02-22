@@ -9,6 +9,8 @@
  */
 
 import type { WalterClient } from "../client.js";
+import type { ToolResult } from "../types.js";
+import { toolSuccess, toolError } from "../types.js";
 
 export function createChatTool(client: WalterClient) {
   return {
@@ -37,6 +39,7 @@ export function createChatTool(client: WalterClient) {
         },
       },
       required: ["message"],
+      additionalProperties: false,
     },
 
     async execute(
@@ -44,28 +47,27 @@ export function createChatTool(client: WalterClient) {
       params: unknown,
       signal?: AbortSignal,
       onUpdate?: (result: unknown) => void,
-    ) {
+    ): Promise<ToolResult> {
       const { message, chat_id: chatIdInput } = params as {
         message: string;
         chat_id?: string;
       };
 
       if (!message?.trim()) {
-        return {
-          content: [{ type: "text" as const, text: "Error: message is required" }],
-          details: { error: "message is required" },
-        };
+        return toolError("message is required");
       }
 
       try {
         // Auto-create chat if none specified
-        const chatId = chatIdInput?.trim() || (await client.createChat());
+        const chatId = chatIdInput?.trim() || (await client.createChat(signal));
 
-        const { response, chat_id: resolvedChatId } = await client.chatStreaming(
+        // Capture the resolved chat_id eagerly so the callback has it immediately
+        let resolvedChatId = chatId;
+
+        const { response, chat_id: finalChatId } = await client.chatStreaming(
           chatId,
           message,
           (partial) => {
-            // Stream partial results back to OpenClaw via onUpdate
             onUpdate?.({
               content: [{ type: "text", text: partial }],
               details: { status: "processing", chat_id: resolvedChatId },
@@ -74,16 +76,12 @@ export function createChatTool(client: WalterClient) {
           signal,
         );
 
-        return {
-          content: [{ type: "text" as const, text: response }],
-          details: { chat_id: resolvedChatId, status: "complete" },
-        };
+        resolvedChatId = finalChatId;
+
+        return toolSuccess(response, { chat_id: resolvedChatId, status: "complete" });
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: "text" as const, text: `Error: ${errMsg}` }],
-          details: { error: errMsg },
-        };
+        return toolError(errMsg);
       }
     },
   };

@@ -23,10 +23,20 @@ export function validateConfig(raw: unknown): WalterPluginConfig {
     throw new Error("Walter plugin config requires 'token' (your Walter API token)");
   }
 
-  const url =
-    typeof config.url === "string" && config.url.trim()
-      ? config.url.trim().replace(/\/+$/, "")
-      : DEFAULT_URL;
+  let url = DEFAULT_URL;
+  if (typeof config.url === "string" && config.url.trim()) {
+    const trimmed = config.url.trim().replace(/\/+$/, "");
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("must use http or https");
+      }
+      url = trimmed;
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "invalid format";
+      throw new Error(`Walter plugin config 'url' is not a valid URL: ${detail}`);
+    }
+  }
 
   return {
     url,

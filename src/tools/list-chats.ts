@@ -3,6 +3,8 @@
  */
 
 import type { WalterClient } from "../client.js";
+import type { ToolResult } from "../types.js";
+import { toolSuccess, toolError } from "../types.js";
 
 export function createListChatsTool(client: WalterClient) {
   return {
@@ -16,47 +18,39 @@ export function createListChatsTool(client: WalterClient) {
       type: "object" as const,
       properties: {},
       required: [] as string[],
+      additionalProperties: false,
     },
 
-    async execute(_toolCallId: string, _params: unknown) {
+    async execute(
+      _toolCallId: string,
+      _params: unknown,
+      signal?: AbortSignal,
+    ): Promise<ToolResult> {
       try {
-        const chats = await client.listChats();
+        const chats = await client.listChats(signal);
 
         if (chats.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "No existing conversations. Use walter_chat to start one.",
-              },
-            ],
-            details: { chats: [], count: 0 },
-          };
+          return toolSuccess(
+            "No existing conversations. Use walter_chat to start one.",
+            { chats: [], count: 0 },
+          );
         }
 
         const lines = chats.map((chat) => {
           const title = chat.name || chat.first_message || "(untitled)";
           const date = chat.last_activity_at || "";
           const dateStr = date ? ` (${date})` : "";
-          const statusStr = chat.status === "active" ? " 🟢" : "";
-          return `- ${chat.id}: ${title}${dateStr}${statusStr}`;
+          const statusIndicator = chat.status === "active" ? " [active]" : "";
+          return `- ${chat.id}: ${title}${dateStr}${statusIndicator}`;
         });
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `${chats.length} conversation(s):\n\n${lines.join("\n")}`,
-            },
-          ],
-          details: { chats, count: chats.length },
-        };
+        return toolSuccess(
+          `${chats.length} conversation(s):\n\n${lines.join("\n")}`,
+          { chats, count: chats.length },
+        );
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: "text" as const, text: `Error: ${msg}` }],
-          details: { error: msg },
-        };
+        return toolError(msg);
       }
     },
   };

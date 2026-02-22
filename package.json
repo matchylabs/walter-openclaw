@@ -30,9 +30,14 @@
     "devops"
   ],
   "license": "Apache-2.0",
+  "author": "Matchy Labs",
   "repository": {
     "type": "git",
     "url": "https://github.com/matchylabs/walter-openclaw.git"
+  },
+  "homepage": "https://github.com/matchylabs/walter-openclaw#readme",
+  "bugs": {
+    "url": "https://github.com/matchylabs/walter-openclaw/issues"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

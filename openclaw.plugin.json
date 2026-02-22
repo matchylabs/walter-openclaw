@@ -1,6 +1,7 @@
 {
   "id": "walter",
   "name": "Walter",
+  "version": "0.1.0",
   "description": "Connect OpenClaw to Walter for AI-powered infrastructure management. Explore servers, run commands, analyze logs — all through natural conversation with a curious raccoon who happens to be an infrastructure expert.",
   "configSchema": {
     "type": "object",
@@ -16,5 +17,9 @@
         "description": "Walter API token for authentication"
       }
     }
+  },
+  "uiHints": {
+    "token": { "label": "API Token", "sensitive": true, "placeholder": "your-api-token" },
+    "url": { "label": "Instance URL", "placeholder": "https://walterops.com" }
   }
 }

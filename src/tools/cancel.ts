@@ -3,6 +3,8 @@
  */
 
 import type { WalterClient } from "../client.js";
+import type { ToolResult } from "../types.js";
+import { toolSuccess, toolError } from "../types.js";
 
 export function createCancelTool(client: WalterClient) {
   return {
@@ -20,35 +22,31 @@ export function createCancelTool(client: WalterClient) {
         },
       },
       required: ["chat_id"],
+      additionalProperties: false,
     },
 
-    async execute(_toolCallId: string, params: unknown) {
+    async execute(
+      _toolCallId: string,
+      params: unknown,
+      signal?: AbortSignal,
+    ): Promise<ToolResult> {
       const { chat_id } = params as { chat_id: string };
 
       if (!chat_id?.trim()) {
-        return {
-          content: [{ type: "text" as const, text: "Error: chat_id is required" }],
-          details: { error: "chat_id is required" },
-        };
+        return toolError("chat_id is required");
       }
 
       try {
-        const result = await client.cancelProcessing(chat_id);
+        const result = await client.cancelProcessing(chat_id, signal);
         const text =
           result.status === "cancelled"
             ? `Cancelled active operation in ${chat_id}. You can send a new message to redirect Walter.`
             : `Nothing was running in ${chat_id}.`;
 
-        return {
-          content: [{ type: "text" as const, text }],
-          details: { chat_id, ...result },
-        };
+        return toolSuccess(text, { chat_id, ...result });
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: "text" as const, text: `Error: ${msg}` }],
-          details: { error: msg },
-        };
+        return toolError(msg);
       }
     },
   };
