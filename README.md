@@ -97,8 +97,8 @@ Filter connected systems. At least one filter required.
 ## Contributing
 
 ```bash
-git clone https://github.com/matchylabs/Walter.git
-cd Walter/walter-openclaw-plugin
+git clone https://github.com/matchylabs/walter-openclaw.git
+cd walter-openclaw
 npm install
 npm run build    # compile TypeScript
 npm run dev      # watch mode
