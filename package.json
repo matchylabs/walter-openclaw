@@ -1,0 +1,43 @@
+{
+  "name": "walter-openclaw",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for Walter \u2014 AI-powered infrastructure management with streaming responses",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "walter",
+    "infrastructure",
+    "ai-agent",
+    "devops"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matchylabs/walter-openclaw.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

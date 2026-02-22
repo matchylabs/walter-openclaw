@@ -1,0 +1,20 @@
+{
+  "id": "walter",
+  "name": "Walter",
+  "description": "Connect OpenClaw to Walter for AI-powered infrastructure management. Explore servers, run commands, analyze logs — all through natural conversation with a curious raccoon who happens to be an infrastructure expert.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["token"],
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Walter instance URL. Defaults to https://walterops.com. Only needed for self-hosted deployments."
+      },
+      "token": {
+        "type": "string",
+        "description": "Walter API token for authentication"
+      }
+    }
+  }
+}
