@@ -34,19 +34,17 @@ export type ResponseStatus =
 
 type HttpError = Error & { httpStatus?: number };
 
-type McpToolResult = {
-  content: Array<{ type: string; text: string }>;
-  isError: boolean;
-};
-
 // ─── Constants ──────────────────────────────────────────────────
 
 const PROTOCOL_VERSION = "2025-11-25";
 const CLIENT_NAME = "openclaw-walter-plugin";
 const CLIENT_VERSION = "0.1.0";
 
-/** Default timeout for individual HTTP requests (30 seconds). */
-const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+/** Timeout for individual HTTP requests (30 seconds). */
+const RPC_TIMEOUT_MS = 30_000;
+
+/** Default seconds between polls when server doesn't specify. */
+const DEFAULT_RETRY_AFTER_SECONDS = 4;
 
 // ─── Validation helpers ─────────────────────────────────────────
 
@@ -68,15 +66,12 @@ function assertArray<T>(
   value: unknown,
   field: string,
   context: string,
-  itemValidator?: (item: unknown, index: number) => T,
+  itemValidator: (item: unknown, index: number) => T,
 ): T[] {
   if (!Array.isArray(value)) {
     throw new Error(`${context}: expected array for '${field}', got ${typeof value}`);
   }
-  if (itemValidator) {
-    return value.map((item, i) => itemValidator(item, i));
-  }
-  return value as T[];
+  return value.map((item, i) => itemValidator(item, i));
 }
 
 function assertNumber(value: unknown, field: string, context: string): number {
@@ -122,7 +117,9 @@ function validateResponseStatus(raw: unknown): ResponseStatus {
         status: "processing",
         partial: typeof obj.partial === "string" ? obj.partial : undefined,
         retry_after_seconds:
-          typeof obj.retry_after_seconds === "number" ? obj.retry_after_seconds : 4,
+          typeof obj.retry_after_seconds === "number"
+            ? obj.retry_after_seconds
+            : DEFAULT_RETRY_AFTER_SECONDS,
       };
     case "complete":
       return {
@@ -153,12 +150,37 @@ export class WalterClient {
     this.token = token;
   }
 
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${this.token}`,
+    };
+    if (this.sessionId) {
+      headers["Mcp-Session-Id"] = this.sessionId;
+    }
+    return headers;
+  }
+
+  /**
+   * Build a fetch signal that enforces BOTH a per-request timeout AND
+   * respects the caller's cancellation signal.
+   */
+  private buildSignal(callerSignal?: AbortSignal): AbortSignal {
+    const timeout = AbortSignal.timeout(RPC_TIMEOUT_MS);
+    if (!callerSignal) return timeout;
+    return AbortSignal.any([callerSignal, timeout]);
+  }
+
+  private captureSessionId(response: Response): void {
+    const newSessionId = response.headers.get("mcp-session-id");
+    if (newSessionId) {
+      this.sessionId = newSessionId;
+    }
+  }
+
   /**
    * Send a JSON-RPC request to the Walter MCP endpoint.
-   *
-   * @param method   JSON-RPC method name
-   * @param params   Method parameters
-   * @param signal   Optional abort signal for cancellation + timeout
    */
   private async rpc(
     method: string,
@@ -167,36 +189,14 @@ export class WalterClient {
   ): Promise<unknown> {
     const id = ++this.requestId;
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${this.token}`,
-    };
-
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
-    }
-
-    // Create a timeout abort if no external signal, or combine with external signal
-    const fetchSignal = signal ?? AbortSignal.timeout(DEFAULT_RPC_TIMEOUT_MS);
-
     const response = await fetch(`${this.url}/mcp`, {
       method: "POST",
-      headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        method,
-        params,
-      }),
-      signal: fetchSignal,
+      headers: this.buildHeaders(),
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      signal: this.buildSignal(signal),
     });
 
-    // Capture session ID from response headers
-    const newSessionId = response.headers.get("mcp-session-id");
-    if (newSessionId) {
-      this.sessionId = newSessionId;
-    }
+    this.captureSessionId(response);
 
     if (!response.ok) {
       const error: HttpError = new Error(
@@ -206,13 +206,12 @@ export class WalterClient {
       throw error;
     }
 
-    const body = (await response.json()) as {
-      result?: unknown;
-      error?: { message: string; code?: number };
-    };
+    const body = assertObject(await response.json(), `rpc(${method}) response`);
 
     if (body.error) {
-      throw new Error(`Walter RPC error: ${body.error.message}`);
+      const errObj = assertObject(body.error, `rpc(${method}) error`);
+      const message = typeof errObj.message === "string" ? errObj.message : "Unknown RPC error";
+      throw new Error(`Walter RPC error: ${message}`);
     }
 
     return body.result;
@@ -226,28 +225,18 @@ export class WalterClient {
     params: Record<string, unknown> = {},
     signal?: AbortSignal,
   ): Promise<void> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${this.token}`,
-    };
-
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
-    }
-
-    const fetchSignal = signal ?? AbortSignal.timeout(DEFAULT_RPC_TIMEOUT_MS);
-
     const response = await fetch(`${this.url}/mcp`, {
       method: "POST",
-      headers,
+      headers: this.buildHeaders(),
       body: JSON.stringify({
         jsonrpc: "2.0",
         method,
         ...(Object.keys(params).length > 0 ? { params } : {}),
       }),
-      signal: fetchSignal,
+      signal: this.buildSignal(signal),
     });
+
+    this.captureSessionId(response);
 
     if (!response.ok) {
       throw new Error(
@@ -256,17 +245,11 @@ export class WalterClient {
     }
   }
 
-  /**
-   * Reset session state so the next call re-initializes.
-   */
   private resetSession(): void {
     this.initPromise = null;
     this.sessionId = null;
   }
 
-  /**
-   * Check if an error looks like a session/auth failure that a retry might fix.
-   */
   private isSessionError(error: unknown): boolean {
     if (!(error instanceof Error)) return false;
     const status = (error as HttpError).httpStatus;
@@ -275,12 +258,14 @@ export class WalterClient {
 
   /**
    * Ensure the MCP session is initialized.
-   * Uses a shared promise to prevent concurrent initialization races.
+   *
+   * Uses a shared promise so concurrent callers don't double-initialize.
+   * The init itself uses its own timeout (not the caller's signal) so
+   * one caller's cancellation can't poison the shared promise.
    */
-  private ensureInitialized(signal?: AbortSignal): Promise<void> {
+  private ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.doInitialize(signal).catch((err) => {
-        // Reset so next call retries initialization
+      this.initPromise = this.doInitialize().catch((err) => {
         this.initPromise = null;
         throw err;
       });
@@ -288,18 +273,14 @@ export class WalterClient {
     return this.initPromise;
   }
 
-  private async doInitialize(signal?: AbortSignal): Promise<void> {
-    await this.rpc(
-      "initialize",
-      {
-        protocolVersion: PROTOCOL_VERSION,
-        capabilities: {},
-        clientInfo: { name: CLIENT_NAME, version: CLIENT_VERSION },
-      },
-      signal,
-    );
+  private async doInitialize(): Promise<void> {
+    await this.rpc("initialize", {
+      protocolVersion: PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: CLIENT_NAME, version: CLIENT_VERSION },
+    });
 
-    await this.notify("notifications/initialized", {}, signal);
+    await this.notify("notifications/initialized");
   }
 
   /**
@@ -310,15 +291,15 @@ export class WalterClient {
     name: string,
     args: Record<string, unknown> = {},
     signal?: AbortSignal,
-  ): Promise<McpToolResult> {
-    await this.ensureInitialized(signal);
+  ): Promise<Array<{ type: string; text: string }>> {
+    await this.ensureInitialized();
 
     try {
       return await this.callToolInner(name, args, signal);
     } catch (error) {
       if (this.isSessionError(error)) {
         this.resetSession();
-        await this.ensureInitialized(signal);
+        await this.ensureInitialized();
         return this.callToolInner(name, args, signal);
       }
       throw error;
@@ -329,7 +310,7 @@ export class WalterClient {
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<McpToolResult> {
+  ): Promise<Array<{ type: string; text: string }>> {
     const raw = await this.rpc("tools/call", { name, arguments: args }, signal);
     const result = assertObject(raw, `tools/call(${name})`);
 
@@ -346,21 +327,15 @@ export class WalterClient {
       },
     );
 
-    const isError = result.isError === true;
-
-    if (isError) {
-      const errorText = content[0]?.text ?? "Unknown error";
-      throw new Error(errorText);
+    if (result.isError === true) {
+      throw new Error(content[0]?.text ?? "Unknown tool error");
     }
 
-    return { content, isError };
+    return content;
   }
 
-  /**
-   * Extract text content from an MCP tool result.
-   */
-  private extractText(result: McpToolResult): string {
-    return result.content
+  private extractText(content: Array<{ type: string; text: string }>): string {
+    return content
       .filter((c) => c.type === "text")
       .map((c) => c.text)
       .join("\n");
@@ -370,8 +345,8 @@ export class WalterClient {
    * Extract and parse JSON from an MCP tool result.
    * Throws if the content is not valid JSON.
    */
-  private parseJson(result: McpToolResult): unknown {
-    const text = this.extractText(result);
+  private parseJson(content: Array<{ type: string; text: string }>): unknown {
+    const text = this.extractText(content);
     try {
       return JSON.parse(text);
     } catch {
@@ -383,75 +358,54 @@ export class WalterClient {
 
   // ─── Public API ───────────────────────────────────────────────
 
-  /**
-   * Create a new chat session. Returns the chat_id.
-   */
   async createChat(signal?: AbortSignal): Promise<string> {
-    const result = await this.callTool("start_chat", {}, signal);
-    const data = assertObject(this.parseJson(result), "createChat");
+    const content = await this.callTool("start_chat", {}, signal);
+    const data = assertObject(this.parseJson(content), "createChat");
     return assertString(data.chat_id, "chat_id", "createChat");
   }
 
-  /**
-   * List the user's chat sessions.
-   */
   async listChats(signal?: AbortSignal): Promise<Chat[]> {
-    const result = await this.callTool("list_chats", {}, signal);
-    const data = assertObject(this.parseJson(result), "listChats");
+    const content = await this.callTool("list_chats", {}, signal);
+    const data = assertObject(this.parseJson(content), "listChats");
     return assertArray(data.chats, "chats", "listChats", validateChat);
   }
 
-  /**
-   * Send a message to a chat. Returns the request_id for polling.
-   */
   async sendMessage(
     chatId: string,
     message: string,
     signal?: AbortSignal,
   ): Promise<{ request_id: string; chat_id: string }> {
-    const result = await this.callTool("send_message", { chat_id: chatId, message }, signal);
-    const data = assertObject(this.parseJson(result), "sendMessage");
+    const content = await this.callTool("send_message", { chat_id: chatId, message }, signal);
+    const data = assertObject(this.parseJson(content), "sendMessage");
     return {
       request_id: assertString(data.request_id, "request_id", "sendMessage"),
       chat_id: assertString(data.chat_id, "chat_id", "sendMessage"),
     };
   }
 
-  /**
-   * Poll for a response to a previously sent message.
-   */
   async getResponse(requestId: string, signal?: AbortSignal): Promise<ResponseStatus> {
-    const result = await this.callTool("get_response", { request_id: requestId }, signal);
-    return validateResponseStatus(this.parseJson(result));
+    const content = await this.callTool("get_response", { request_id: requestId }, signal);
+    return validateResponseStatus(this.parseJson(content));
   }
 
-  /**
-   * Cancel active processing in a chat.
-   */
   async cancelProcessing(
     chatId: string,
     signal?: AbortSignal,
   ): Promise<{ status: string; message?: string }> {
-    const result = await this.callTool("cancel", { chat_id: chatId }, signal);
-    const data = assertObject(this.parseJson(result), "cancelProcessing");
+    const content = await this.callTool("cancel", { chat_id: chatId }, signal);
+    const data = assertObject(this.parseJson(content), "cancelProcessing");
     return {
       status: assertString(data.status, "status", "cancelProcessing"),
       message: typeof data.message === "string" ? data.message : undefined,
     };
   }
 
-  /**
-   * List all connected turfs.
-   */
   async listTurfs(signal?: AbortSignal): Promise<Turf[]> {
-    const result = await this.callTool("list_turfs", {}, signal);
-    const data = assertObject(this.parseJson(result), "listTurfs");
+    const content = await this.callTool("list_turfs", {}, signal);
+    const data = assertObject(this.parseJson(content), "listTurfs");
     return assertArray(data.turfs, "turfs", "listTurfs", validateTurf);
   }
 
-  /**
-   * Search turfs by name, type, OS, or status.
-   */
   async searchTurfs(
     filters: {
       name?: string;
@@ -467,8 +421,8 @@ export class WalterClient {
     if (filters.os !== undefined) args.os = filters.os;
     if (filters.status !== undefined) args.status = filters.status;
 
-    const result = await this.callTool("search_turfs", args, signal);
-    const data = assertObject(this.parseJson(result), "searchTurfs");
+    const content = await this.callTool("search_turfs", args, signal);
+    const data = assertObject(this.parseJson(content), "searchTurfs");
     return {
       turfs: assertArray(data.turfs, "turfs", "searchTurfs", validateTurf),
       count: assertNumber(data.count, "count", "searchTurfs"),
@@ -490,18 +444,15 @@ export class WalterClient {
   ): Promise<{ response: string; chat_id: string }> {
     const { request_id, chat_id } = await this.sendMessage(chatId, message, signal);
 
-    // Safety timeout — don't poll forever (5 minutes)
     const maxPollMs = 5 * 60 * 1000;
     const pollDeadline = Date.now() + maxPollMs;
 
-    // Initial delay — Walter needs a moment to start working
     await delay(2000, signal);
 
     let lastPartial = "";
     let consecutiveErrors = 0;
     const maxConsecutiveErrors = 3;
 
-    // Poll loop
     while (!signal?.aborted && Date.now() < pollDeadline) {
       let status: ResponseStatus;
 
@@ -517,12 +468,11 @@ export class WalterClient {
 
       switch (status.status) {
         case "processing":
-          // Stream partial results if they've changed
           if (status.partial && status.partial !== lastPartial) {
             lastPartial = status.partial;
             onPartial?.(status.partial);
           }
-          await delay((status.retry_after_seconds ?? 4) * 1000, signal);
+          await delay(status.retry_after_seconds * 1000, signal);
           break;
 
         case "complete":

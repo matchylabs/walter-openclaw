@@ -4,7 +4,7 @@
 
 import type { WalterClient } from "../client.js";
 import type { ToolResult } from "../types.js";
-import { toolSuccess, toolError } from "../types.js";
+import { toolSuccess, toolError, toUserMessage } from "../types.js";
 
 export function createCancelTool(client: WalterClient) {
   return {
@@ -45,8 +45,7 @@ export function createCancelTool(client: WalterClient) {
 
         return toolSuccess(text, { chat_id, ...result });
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return toolError(msg);
+        return toolError(toUserMessage(error));
       }
     },
   };

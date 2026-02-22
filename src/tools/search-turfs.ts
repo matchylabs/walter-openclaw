@@ -4,7 +4,7 @@
 
 import type { WalterClient } from "../client.js";
 import type { ToolResult } from "../types.js";
-import { toolSuccess, toolError } from "../types.js";
+import { toolSuccess, toolError, toUserMessage } from "../types.js";
 
 export function createSearchTurfsTool(client: WalterClient) {
   return {
@@ -82,8 +82,7 @@ export function createSearchTurfsTool(client: WalterClient) {
           { turfs, count },
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return toolError(msg);
+        return toolError(toUserMessage(error));
       }
     },
   };

@@ -4,7 +4,7 @@
 
 import type { WalterClient } from "../client.js";
 import type { ToolResult } from "../types.js";
-import { toolSuccess, toolError } from "../types.js";
+import { toolSuccess, toolError, toUserMessage } from "../types.js";
 
 export function createListChatsTool(client: WalterClient) {
   return {
@@ -49,8 +49,7 @@ export function createListChatsTool(client: WalterClient) {
           { chats, count: chats.length },
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return toolError(msg);
+        return toolError(toUserMessage(error));
       }
     },
   };

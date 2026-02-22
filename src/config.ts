@@ -9,6 +9,23 @@ export type WalterPluginConfig = {
   token: string;
 };
 
+export const CONFIG_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["token"],
+  properties: {
+    url: {
+      type: "string",
+      description:
+        "Walter instance URL. Defaults to https://walterops.com. Only needed for self-hosted deployments.",
+    },
+    token: {
+      type: "string",
+      description: "Walter API token for authentication",
+    },
+  },
+} as const;
+
 export function validateConfig(raw: unknown): WalterPluginConfig {
   if (!raw || typeof raw !== "object") {
     throw new Error(

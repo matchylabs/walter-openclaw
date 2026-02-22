@@ -10,7 +10,7 @@
 
 import type { WalterClient } from "../client.js";
 import type { ToolResult } from "../types.js";
-import { toolSuccess, toolError } from "../types.js";
+import { toolSuccess, toolError, toUserMessage } from "../types.js";
 
 export function createChatTool(client: WalterClient) {
   return {
@@ -80,8 +80,7 @@ export function createChatTool(client: WalterClient) {
 
         return toolSuccess(response, { chat_id: resolvedChatId, status: "complete" });
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        return toolError(errMsg);
+        return toolError(toUserMessage(error));
       }
     },
   };
